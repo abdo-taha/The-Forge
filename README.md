@@ -1,222 +1,190 @@
-# Reusable Local Kubernetes Platform
+# The Forge
 
-This folder is the seed for a separate local platform project. It owns the machine-wide infrastructure that can be reused by Skyress and future projects:
+A reusable local Kubernetes platform for development and CI testing.
 
-- kind cluster
-- HTTPS localhost-only Docker registry
-- shared `dev` and `staging` namespaces
-- namespace-scoped deployer ServiceAccounts and RBAC
-- GitLab Runner setup guidance
-- kubeconfig helper scripts
+It provides:
 
-Application repositories should not own or recreate this cluster. They should only build images, scan them, push to `registry.localhost:5001`, and deploy their own Helm charts into namespaces provided by this platform.
+- a kind Kubernetes cluster
+- an HTTPS local Docker registry
+- `dev` and `staging` namespaces
+- namespace-scoped deployer RBAC
+- resource quotas and default container requests/limits
+- optional GitHub Actions and GitLab Runner setup scripts
 
-## Structure
+## Requirements
+
+- WSL2 Ubuntu
+- Docker Desktop with WSL integration enabled
+- `kubectl`
+- `kind`
+- `openssl`
+
+## Project Structure
 
 ```text
-local-platform/
-├── gitlab-runner/
-│   └── config.toml.example
-├── github-actions/
-│   └── local-platform-check.yml.example
-├── kind/
-│   └── kind-config.yaml
-├── k8s/
-│   ├── namespaces.yaml
-│   ├── network-policies.yaml
-│   ├── tenant-defaults.yaml
-│   └── rbac/
-├── registry/
-│   └── docker-compose.registry.yml
-└── scripts/
-    ├── apply-platform.sh
-    ├── bootstrap-kind.sh
-    ├── ensure-registry-certs.sh
-    ├── install-runner-kubeconfigs.sh
-    ├── setup-github-runner-wsl.sh
-    ├── setup-gitlab-runner-wsl.sh
-    ├── start-registry.sh
-    └── create-deployer-kubeconfig.sh
+.
+|-- github-actions/
+|   `-- local-platform-check.yml.example
+|-- gitlab-runner/
+|   `-- config.toml.example
+|-- k8s/
+|   |-- namespaces.yaml
+|   |-- network-policies.yaml
+|   |-- tenant-defaults.yaml
+|   `-- rbac/
+|-- kind/
+|   `-- kind-config.yaml
+|-- registry/
+|   `-- docker-compose.registry.yml
+`-- scripts/
+    |-- apply-platform.sh
+    |-- bootstrap-kind.sh
+    |-- create-deployer-kubeconfig.sh
+    |-- ensure-registry-certs.sh
+    |-- install-runner-kubeconfigs.sh
+    |-- setup-github-runner-wsl.sh
+    |-- setup-gitlab-runner-wsl.sh
+    `-- start-registry.sh
 ```
 
-## Bootstrap
+## Quick Start
 
 Run from WSL2 Ubuntu:
 
 ```bash
-chmod +x local-platform/scripts/*.sh
-local-platform/scripts/start-registry.sh
-local-platform/scripts/bootstrap-kind.sh
-```
-
-This starts:
-
-- HTTPS local registry: `registry.localhost:5001`
-
-And creates:
-
-- kind cluster: `local-dev`
-- kube context: `kind-local-dev`
-- namespaces: `dev`, `staging`
-- namespace quotas and default container requests/limits
-- default-deny ingress NetworkPolicies with same-namespace ingress allowed
-- namespace deployer ServiceAccount: `gitlab-deployer`
-
-The registry script creates `certs/domain.crt` and `certs/domain.key` if they do not exist. The cluster bootstrap also ensures those cert files exist before creating nodes. The kind config mounts the certificate into every node at cluster creation time, so the nodes trust the local HTTPS registry without post-creation node patching.
-
-If you already created the old HTTP registry, recreate it once before bootstrapping:
-
-```bash
-docker stop kind-registry
-docker rm kind-registry
-```
-
-If you already created the old kind cluster, recreate it once so the node trust config is applied:
-
-```bash
-kind delete cluster --name local-dev
-```
-
-Then run:
-
-```bash
+cd "/mnt/c/path/to/The Forge"
+chmod +x scripts/*.sh
 scripts/start-registry.sh
 scripts/bootstrap-kind.sh
 ```
 
-To push from WSL/Docker to the self-signed registry, Docker must trust the generated CA:
+Verify:
+
+```bash
+kubectl get namespaces
+kubectl get resourcequota -n dev
+kubectl get limitrange -n dev
+kubectl get serviceaccount gitlab-deployer -n dev
+docker ps
+```
+
+Use local image names like:
+
+```text
+registry.localhost:5001/my-app:dev
+```
+
+## Local Registry
+
+Start the registry:
+
+```bash
+scripts/start-registry.sh
+```
+
+The registry is exposed at:
+
+```text
+https://registry.localhost:5001
+```
+
+The scripts generate local TLS files under `certs/`. These files are ignored by git.
+
+To make Docker trust the generated certificate:
 
 ```bash
 sudo mkdir -p /etc/docker/certs.d/registry.localhost:5001
 sudo cp certs/domain.crt /etc/docker/certs.d/registry.localhost:5001/ca.crt
 ```
 
-If `registry.localhost` does not resolve in WSL, add it to `/etc/hosts`:
+If `registry.localhost` does not resolve:
 
 ```bash
 echo "127.0.0.1 registry.localhost" | sudo tee -a /etc/hosts
 ```
 
-Use image names like:
+## Cluster Bootstrap
 
-```text
-registry.localhost:5001/my-app:dev
+Create or update the local platform:
+
+```bash
+scripts/bootstrap-kind.sh
 ```
 
-## Cloud-Like Workflow
+This creates:
 
-Treat `kind/kind-config.yaml` like a cloud node pool or cluster bootstrap template. Changes there require recreating the kind cluster because they affect Docker node containers, port mappings, mounted files, and containerd startup config:
+- kind cluster `local-dev`
+- kube context `kind-local-dev`
+- namespaces `dev` and `staging`
+- namespace quotas and default resource settings
+- basic NetworkPolicy manifests
+- deployer ServiceAccounts and RBAC
+
+If `kind/kind-config.yaml` changes, recreate the cluster:
 
 ```bash
 kind delete cluster --name local-dev
 scripts/bootstrap-kind.sh
 ```
 
-Treat files under `k8s/` like live platform resources. Changes there do not require cluster recreation:
+If only files under `k8s/` change, re-apply them:
 
 ```bash
 scripts/apply-platform.sh
 ```
 
-Use this split:
+## CI Kubeconfigs
+
+Generate namespace-scoped kubeconfigs:
+
+```bash
+scripts/create-deployer-kubeconfig.sh dev
+scripts/create-deployer-kubeconfig.sh staging
+```
+
+For CI variables:
+
+```bash
+scripts/create-deployer-kubeconfig.sh dev | base64 -w0
+scripts/create-deployer-kubeconfig.sh staging | base64 -w0
+```
+
+Suggested variable names:
 
 ```text
-kind/       node and cluster bootstrap, recreate when changed
-k8s/        live Kubernetes platform resources, re-apply when changed
-registry/   local registry runtime config
-scripts/    repeatable platform operations
-```
-
-The local platform intentionally gives app deployers namespace-scoped permissions instead of cluster-admin. App projects should deploy with Helm or kubectl into `dev` or `staging` using images from `registry.localhost:5001`.
-
-Note: kind's default CNI may not enforce NetworkPolicies the same way a cloud CNI does. The policies are included so your manifests follow the cloud model, but enforcement depends on the installed CNI.
-
-## GitLab Runner
-
-Install and configure a local WSL shell runner:
-
-```bash
-GITLAB_RUNNER_TOKEN=glrt-xxx scripts/setup-gitlab-runner-wsl.sh
-```
-
-The script:
-
-- installs GitLab Runner if missing
-- registers a shell runner tagged `local-wsl`
-- adds the `gitlab-runner` user to the Docker group
-- installs namespace-scoped deployer kubeconfigs for `dev` and `staging`
-- installs the local registry CA for Docker
-- adds `registry.localhost` to `/etc/hosts` if needed
-
-You can customize registration:
-
-```bash
-GITLAB_URL=https://gitlab.com \
-RUNNER_DESCRIPTION=local-wsl-shell \
-RUNNER_TAGS=local-wsl \
-GITLAB_RUNNER_TOKEN=glrt-xxx \
-scripts/setup-gitlab-runner-wsl.sh
-```
-
-To install/configure the host without registering:
-
-```bash
-REGISTER_RUNNER=false scripts/setup-gitlab-runner-wsl.sh
-```
-
-Verify:
-
-```bash
-sudo -u gitlab-runner docker ps
-sudo -u gitlab-runner kubectl get pods -n dev
-sudo -u gitlab-runner kubectl auth can-i create deployments -n dev
-sudo -u gitlab-runner kubectl auth can-i list nodes
+KUBECONFIG_DEV_B64
+KUBECONFIG_STAGING_B64
 ```
 
 ## GitHub Actions Runner
 
-Install and configure a local WSL GitHub Actions self-hosted runner:
-
-```bash
-GITHUB_RUNNER_URL=https://github.com/OWNER/REPO \
-GITHUB_RUNNER_TOKEN=github-runner-token \
-scripts/setup-github-runner-wsl.sh
-```
-
-Get the token from:
+Create a self-hosted runner token in GitHub:
 
 ```text
-GitHub repository -> Settings -> Actions -> Runners -> New self-hosted runner
+Repository -> Settings -> Actions -> Runners -> New self-hosted runner
 ```
 
-The script:
-
-- creates a dedicated `github-runner` Linux user
-- downloads the GitHub Actions runner
-- registers it with labels `local-wsl,docker,kubernetes`
-- installs it as a service when supported by WSL
-- adds the `github-runner` user to the Docker group
-- installs namespace-scoped deployer kubeconfigs for `dev` and `staging`
-- installs the local registry CA for Docker
-- adds `registry.localhost` to `/etc/hosts` if needed
-
-You can customize it:
+Then run:
 
 ```bash
 GITHUB_RUNNER_URL=https://github.com/OWNER/REPO \
 GITHUB_RUNNER_TOKEN=github-runner-token \
-RUNNER_NAME=local-wsl-actions \
-RUNNER_LABELS=local-wsl,docker,kubernetes \
 scripts/setup-github-runner-wsl.sh
 ```
 
-Use it in GitHub Actions:
+The runner is registered with labels:
+
+```text
+local-wsl,docker,kubernetes
+```
+
+Example workflow:
 
 ```yaml
 name: local-platform-check
 
 on:
-  push:
+  workflow_dispatch:
 
 jobs:
   check:
@@ -229,51 +197,30 @@ jobs:
       - run: kubectl auth can-i list nodes
 ```
 
-Verify:
-
-```bash
-sudo -u github-runner docker ps
-sudo -u github-runner kubectl get pods -n dev
-sudo -u github-runner kubectl auth can-i create deployments -n dev
-sudo -u github-runner kubectl auth can-i list nodes
-```
-
-## CI Kubeconfigs
-
-Generate namespace-scoped kubeconfigs and store them as masked, protected CI variables in each application project that needs deployment:
-
-```bash
-local-platform/scripts/create-deployer-kubeconfig.sh dev | base64 -w0
-local-platform/scripts/create-deployer-kubeconfig.sh staging | base64 -w0
-```
-
-Use these variable names:
+Expected access:
 
 ```text
-KUBECONFIG_DEV_B64
-KUBECONFIG_STAGING_B64
+create deployments in dev: yes
+list cluster nodes: no
 ```
 
-## What Belongs Here
+## GitLab Runner
 
-- Cluster creation config
-- Registry config
-- Shared namespaces
-- Shared deployer RBAC
-- Runner setup examples
-- Reusable bootstrap scripts
-- Platform-level documentation
+Create a GitLab runner token, then run:
 
-## What Does Not Belong Here
+```bash
+GITLAB_RUNNER_TOKEN=glrt-xxx scripts/setup-gitlab-runner-wsl.sh
+```
 
-- Application Helm charts
-- Application Kubernetes Secrets
-- App-specific NetworkPolicies
-- App-specific `.gitlab-ci.yml`
-- Real kubeconfigs or runner tokens
-- Registry image storage
-- kind runtime data
+The runner is registered as a WSL shell runner tagged:
 
-## Docker Socket Risk
+```text
+local-wsl
+```
 
-Avoid mounting `/var/run/docker.sock` into shared runners. It gives CI jobs root-equivalent control of the Docker host. For local development, prefer a locked WSL2 shell runner scoped to your own projects. If you later run the runner in Kubernetes, prefer rootless BuildKit, Kaniko, or Buildah over Docker socket mounting.
+## Security Notes
+
+- Do not commit generated files from `certs/`.
+- Do not commit kubeconfigs, tokens, `.env` files, or runner config files.
+- Self-hosted runners can execute code on your machine. Use them only with trusted repositories and workflows.
+- The provided runner scripts install namespace-scoped kubeconfigs instead of copying your admin kubeconfig.
