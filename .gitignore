@@ -1,0 +1,20 @@
+# Local generated TLS material
+certs/
+
+# IDE/user-local state
+.idea/
+
+# Generated kubeconfigs and tokens
+*.kubeconfig
+*kubeconfig*.yaml
+*kubeconfig*.yml
+*.token
+*.secret
+
+# Local environment files
+.env
+.env.*
+
+# Runner/runtime state
+actions-runner/
+gitlab-runner/config.toml

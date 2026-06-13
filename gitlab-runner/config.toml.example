@@ -1,0 +1,20 @@
+concurrent = 1
+check_interval = 0
+shutdown_timeout = 0
+
+[[runners]]
+  name = "local-wsl-shell"
+  url = "https://gitlab.com"
+  token = "REPLACE_WITH_RUNNER_TOKEN"
+  executor = "shell"
+  shell = "bash"
+  limit = 1
+  output_limit = 4096
+  run_untagged = false
+  locked = true
+  protected = true
+  tag_list = ["local-wsl"]
+  [runners.custom_build_dir]
+    enabled = false
+  [runners.cache]
+    MaxUploadedArchiveSize = 0

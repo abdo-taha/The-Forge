@@ -1,0 +1,23 @@
+services:
+  registry:
+    image: registry:2
+    container_name: kind-registry
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5001:5000"
+    volumes:
+      - registry-data:/var/lib/registry
+      - ../certs:/certs:ro
+    environment:
+      REGISTRY_HTTP_ADDR: 0.0.0.0:5000
+      REGISTRY_HTTP_TLS_CERTIFICATE: /certs/domain.crt
+      REGISTRY_HTTP_TLS_KEY: /certs/domain.key
+    networks:
+      - kind
+
+volumes:
+  registry-data:
+
+networks:
+  kind:
+    external: true

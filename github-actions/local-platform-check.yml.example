@@ -1,0 +1,20 @@
+name: local-platform-check
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  check:
+    runs-on: [self-hosted, local-wsl]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Docker
+        run: docker ps
+      - name: Check Kubernetes
+        run: |
+          kubectl get pods -n dev
+          kubectl auth can-i create deployments -n dev
+          kubectl auth can-i list nodes
+      - name: Check Local Registry Name
+        run: getent hosts registry.localhost
