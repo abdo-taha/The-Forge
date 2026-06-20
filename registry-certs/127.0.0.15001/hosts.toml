@@ -1,0 +1,5 @@
+server = "https://127.0.0.1:5001"
+
+[host."https://kind-registry:5000"]
+  capabilities = ["pull", "resolve"]
+  ca = "/etc/containerd/certs.d/127.0.0.1:5001/ca.crt"

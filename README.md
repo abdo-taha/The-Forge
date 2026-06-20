@@ -71,7 +71,7 @@ docker ps
 Use local image names like:
 
 ```text
-registry.localhost:5001/my-app:dev
+127.0.0.1:5001/my-app:dev
 ```
 
 ## Local Registry
@@ -89,6 +89,10 @@ https://registry.localhost:5001
 ```
 
 The scripts generate local TLS files under `certs/`. These files are ignored by git.
+They also copy the registry CA into `registry-certs/127.0.0.1:5001/ca.crt`
+for kind. Inside the cluster, containerd resolves image pulls for
+`127.0.0.1:5001/my-app:tag` through the HTTPS `kind-registry:5000` mirror
+defined in `registry-certs/127.0.0.1:5001/hosts.toml`.
 
 To make Docker trust the generated certificate:
 
@@ -101,6 +105,14 @@ If `registry.localhost` does not resolve:
 
 ```bash
 echo "127.0.0.1 registry.localhost" | sudo tee -a /etc/hosts
+```
+
+Verify image push and kind pull behavior:
+
+```bash
+docker tag busybox:1.36 127.0.0.1:5001/busybox:test
+docker push 127.0.0.1:5001/busybox:test
+kubectl run pull-test -n dev --image=127.0.0.1:5001/busybox:test --restart=Never
 ```
 
 ## Cluster Bootstrap

@@ -1,5 +1,6 @@
 # Local generated TLS material
 certs/
+registry-certs/**/ca.crt
 
 # IDE/user-local state
 .idea/

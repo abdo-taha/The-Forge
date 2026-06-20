@@ -8,6 +8,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 CERT_DIR="$ROOT_DIR/certs"
 CERT_FILE="$CERT_DIR/domain.crt"
 KEY_FILE="$CERT_DIR/domain.key"
+KIND_CERTS_DIR="$ROOT_DIR/registry-certs/127.0.0.1:5001"
 
 mkdir -p "$CERT_DIR"
 
@@ -19,3 +20,6 @@ if [[ ! -f "$CERT_FILE" || ! -f "$KEY_FILE" ]]; then
     -subj "/CN=${REGISTRY_HOST}" \
     -addext "subjectAltName=DNS:${REGISTRY_HOST},DNS:${REGISTRY_NAME},DNS:localhost,IP:127.0.0.1"
 fi
+
+mkdir -p "$KIND_CERTS_DIR"
+cp "$CERT_FILE" "$KIND_CERTS_DIR/ca.crt"
