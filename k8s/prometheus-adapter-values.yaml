@@ -1,0 +1,20 @@
+prometheus:
+  # The install script overrides this from PROMETHEUS_URL when custom release
+  # names or namespaces are used.
+  url: http://monitoring-kube-prometheus-prometheus.monitoring.svc
+  port: 9090
+
+rules:
+  default: true
+  custom:
+    - seriesQuery: '{__name__=~"^http_requests_total$",namespace!="",pod!=""}'
+      resources:
+        overrides:
+          namespace:
+            resource: namespace
+          pod:
+            resource: pod
+      name:
+        matches: "^(.*)_total"
+        as: "${1}_per_second"
+      metricsQuery: 'sum(rate(<<.Series>>{<<.LabelMatchers>>}[2m])) by (<<.GroupBy>>)'

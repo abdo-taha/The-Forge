@@ -9,6 +9,7 @@ It provides:
 - `dev` and `staging` namespaces
 - namespace-scoped deployer RBAC
 - resource quotas and default container requests/limits
+- optional Prometheus monitoring stack for custom-metric autoscaling
 - optional GitHub Actions and GitLab Runner setup scripts
 
 ## Requirements
@@ -18,6 +19,7 @@ It provides:
 - `kubectl`
 - `kind`
 - `openssl`
+- `helm`
 
 ## Project Structure
 
@@ -41,6 +43,7 @@ It provides:
     |-- bootstrap-kind.sh
     |-- create-deployer-kubeconfig.sh
     |-- ensure-registry-certs.sh
+    |-- install-prometheus-stack.sh
     |-- install-runner-kubeconfigs.sh
     |-- setup-github-runner-wsl.sh
     |-- setup-gitlab-runner-wsl.sh
@@ -143,6 +146,56 @@ If only files under `k8s/` change, re-apply them:
 
 ```bash
 scripts/apply-platform.sh
+```
+
+## Prometheus Autoscaling Metrics
+
+Install Prometheus, Grafana, Alertmanager, and the Prometheus Adapter:
+
+```bash
+scripts/install-prometheus-stack.sh
+```
+
+This installs:
+
+- `kube-prometheus-stack` in the `monitoring` namespace
+- `prometheus-adapter` in the `monitoring` namespace
+- Custom Metrics API support for Kubernetes HPA
+
+Verify the adapter:
+
+```bash
+kubectl get --raw /apis/custom.metrics.k8s.io/v1beta1
+```
+
+The adapter includes a sample rule that exposes pod-level
+`http_requests_total` as `http_requests_per_second`. Apps need to expose
+Prometheus metrics and have a `ServiceMonitor` or `PodMonitor` so Prometheus can
+scrape them.
+
+Example HPA using that metric:
+
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: my-app
+  namespace: dev
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: my-app
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+    - type: Pods
+      pods:
+        metric:
+          name: http_requests_per_second
+        target:
+          type: AverageValue
+          averageValue: "10"
 ```
 
 ## CI Kubeconfigs
